@@ -3324,6 +3324,21 @@ ErrorExit:
 }
 
 #ifdef PIE
+#include "mkvebmlparser.h"
+bool SniffMatroskaFFMPEG( DataSourceBase *source, float *confidence)
+{
+	ALOGI("SniffMatroskaFFMPEG");
+
+    long long pos;
+    if ( EBMLHeaderParser_Parse(source, pos) < 0) {
+        return false;
+    }
+
+    *confidence = 0.59;
+
+    return true;
+}
+
 bool SniffAVIFFMPEG( DataSourceBase *source, float *confidence)
 {
 	ALOGI("SniffAVIFFMPEG");
