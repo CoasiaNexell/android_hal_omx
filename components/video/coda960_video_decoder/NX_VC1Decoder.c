@@ -52,12 +52,12 @@ static int MakeVC1PacketData( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, OMX_S32 forma
 {
 	OMX_S32 size=0;
 	OMX_U8 *p = pIn;
-	UNUSED_PARAM(time);
+//	UNUSED_PARAM(time);
 	if( format == OMX_VIDEO_WMVFormat8 || format == OMX_VIDEO_WMVFormat9 || pDecComp->bXMSWMVType )
 	{
 		PUT_LE32( pOut, (inSize | ((key)?0x80000000:0)) );
 		size += 4;
-		PUT_LE32(pOut, 0);
+		PUT_LE32(pOut, time);
 		size += 4;
 		memcpy(pOut, pIn, inSize);
 		size += inSize;
@@ -259,7 +259,7 @@ int NX_DecodeVC1Frame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, N
 		pDecComp->codecSpecificData = malloc(pDecComp->nExtraDataSize + 128);
 		size = MakeVC1DecodeSpecificInfo( pDecComp );
 		memcpy( pDecComp->tmpInputBuffer, pDecComp->codecSpecificData, size );
-		size += MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer+size, key, (int)(pInBuf->nTimeStamp/1000ll) );
+		size += MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer+size, key, (int)(pInBuf->nTimeStamp/1000000ll) );
 
 		//	Initialize VPU
 		{
@@ -299,7 +299,7 @@ int NX_DecodeVC1Frame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, N
 			{
 				goto Exit;
 			}
-			inSize = MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer + pDecComp->tmpInputBufferIndex,  key, (int)(pInBuf->nTimeStamp/1000ll) );
+			inSize = MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer + pDecComp->tmpInputBufferIndex,  key, (int)(pInBuf->nTimeStamp/1000000ll) );
 			pDecComp->tmpInputBufferIndex = pDecComp->tmpInputBufferIndex + inSize;
 			pDecComp->inFlushFrameCount++;
 			if( FLUSH_FRAME_COUNT == pDecComp->inFlushFrameCount)
@@ -317,7 +317,7 @@ int NX_DecodeVC1Frame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, N
 		}
 		else
 		{
-			inSize = MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer, key, (int)(pInBuf->nTimeStamp/1000ll) );
+			inSize = MakeVC1PacketData( pDecComp, pDecComp->codecType.wmvType.eFormat, inData, inSize, pDecComp->tmpInputBuffer, key, (int)(pInBuf->nTimeStamp/1000000ll) );
 			inData = pDecComp->tmpInputBuffer;
 		}
 
