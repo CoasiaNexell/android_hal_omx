@@ -1462,6 +1462,7 @@ static OMX_S32 EncodeFrame(NX_VIDENC_COMP_TYPE *pEncComp, NX_QUEUE *pInQueue, NX
 			(HAL_PIXEL_FORMAT_RGBA_8888 == hPrivate->format)
 			)
 		{
+#if 0
 			uint8_t *pInData = NULL;
 
 			int ion_fd = ion_open();
@@ -1506,6 +1507,29 @@ static OMX_S32 EncodeFrame(NX_VIDENC_COMP_TYPE *pEncComp, NX_QUEUE *pInQueue, NX
 
 			munmap( pInData, hPrivate->size );
 			close(ion_fd);
+#else
+			uint8_t *pInData = NULL;
+			//	CSC
+			if( pEncComp->hCSCMem == NULL )
+			{
+				pEncComp->hCSCMem = NX_AllocateVideoMemory( pEncComp->encWidth, pEncComp->encHeight, NX_V4l2GetPlaneNum(V4L2_PIX_FMT_NV12M), V4L2_PIX_FMT_NV12M, 4096 );
+				NX_MapVideoMemory(pEncComp->hCSCMem);
+			}
+
+			if( pEncComp->hCSCMem )
+			{
+				OMX_U8 *plu = pEncComp->hCSCMem->pBuffer[0];
+				OMX_U8 *pcb = pEncComp->hCSCMem->pBuffer[1];
+				OMX_S32 luStride = pEncComp->hCSCMem->stride[0];
+				OMX_S32 cbStride = pEncComp->hCSCMem->stride[1];
+
+				mAllocMod->lock(mAllocMod, (void*)hPrivate, GRALLOC_USAGE_SW_READ_OFTEN, 0, 0, hPrivate->stride, hPrivate->height, (void*)&pInData);
+				cscARGBToNV21((char*)pInData, (char*)plu, (char*)pcb, pEncComp->encWidth, pEncComp->encHeight,
+				  				luStride, cbStride,	1, pEncComp->threadNum);
+				memcpy(&inputMem, pEncComp->hCSCMem, sizeof(inputMem) );
+				mAllocMod->unlock(mAllocMod, (void*)hPrivate);
+			}
+#endif
 		}
 		//
 		//	Data Format :
