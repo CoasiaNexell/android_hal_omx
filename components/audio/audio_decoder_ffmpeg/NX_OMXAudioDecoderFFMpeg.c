@@ -812,7 +812,12 @@ static OMX_ERRORTYPE NX_FFAudDec_StateTransition( NX_FFDEC_AUDIO_COMP_TYPE *pDec
 					DbgBuffer( "%s() Waring:.. bAbendState == TRUE\n", __FUNCTION__);
 					return eError;
 				}
-				openAudioCodec( pDecComp );
+
+				if( 0 != openAudioCodec( pDecComp ) )
+				{
+					ErrMsg(("openAudioCodec failed!!!\n"));
+					return OMX_ErrorUndefined;
+				}
 
 				//	Wait thread creation
 				pDecComp->eCurState = eNewState;
