@@ -1633,6 +1633,7 @@ int32_t FFmpegExtractor::stream_component_open(int32_t stream_index)
 			ALOGV("WMAV1");
 			meta.setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_WMA);
 			meta.setData(kKeyRawCodecSpecificData, 0, avctx->extradata, avctx->extradata_size);
+			meta.setInt32(kKeyWMAVersion, kTypeWMA);
 			break;
 		case AV_CODEC_ID_WMAV2:
 			ALOGV("WMAV2");
@@ -2132,6 +2133,7 @@ int32_t FFmpegExtractor::stream_component_open(int32_t stream_index)
 			meta = new MetaData;
 			meta->setCString(kKeyMIMEType, MEDIA_MIMETYPE_AUDIO_WMA);
 			meta->setData(kKeyRawCodecSpecificData, 0, avctx->extradata, avctx->extradata_size);
+			meta.setInt32(kKeyWMAVersion, kTypeWMA);
 			break;
 		case AV_CODEC_ID_WMAV2:
 			ALOGV("WMAV2");
