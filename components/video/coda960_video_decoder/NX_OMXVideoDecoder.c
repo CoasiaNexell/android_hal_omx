@@ -1287,7 +1287,11 @@ static OMX_ERRORTYPE NX_VidDec_StateTransition( NX_VIDDEC_VIDEO_COMP_TYPE *pDecC
 				pDecComp->eCmdBufThread = NX_THREAD_CMD_RUN;
 				NX_PostSem( pDecComp->hBufCtrlSem );
 				pDecComp->eCurState = eNewState;
-				openVideoCodec( pDecComp );
+				if( 0 != openVideoCodec( pDecComp ) )
+				{
+					ErrMsg(("openVideoCodec failed!!!\n"));
+					return OMX_ErrorUndefined;
+				}
 				DBG_STATE("OMX_StateIdle --> OMX_StateExecuting");
 				break;
 			case OMX_StatePause:
