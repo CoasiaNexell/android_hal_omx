@@ -10,6 +10,7 @@ ANDROID_VERSION_STR := $(PLATFORM_VERSION)
 ANDROID_VERSION := $(firstword $(ANDROID_VERSION_STR))
 ifeq ($(ANDROID_VERSION), 9)
 LOCAL_VENDOR_MODULE := true
+LOCAL_CFLAGS += -DPIE
 else
 LOCAL_MODULE_TAGS := optional
 endif
@@ -50,6 +51,33 @@ LOCAL_C_INCLUDES += \
 	$(NX_HW_TOP)/gralloc \
 	$(NX_HW_INCLUDE)
 
+ifeq ($(ANDROID_VERSION), 9)
+
+ifeq ($(BOARD_GRALLOC_ALIGN_FACTOR),128)
+LOCAL_CFLAGS += -DGRALLOC_ALIGN_W_FACTOR_128
+endif
+LOCAL_C_INCLUDES += \
+	$(OMX_TOP)/include \
+	$(OMX_TOP)/core/inc \
+	$(OMX_TOP)/components/base \
+	$(NX_LIBRARY_TOP)/nx-video-api/src/include \
+	$(NX_LIBRARY_TOP)/nx-video-api/src \
+	$(NX_LIBRARY_TOP)/nx-scaler \
+	$(NX_LIBRARY_TOP)/nx-gl-tools
+
+LOCAL_SHARED_LIBRARIES := \
+	libNX_OMX_Common \
+	libNX_OMX_Base \
+	libdl \
+	liblog \
+	libhardware \
+	libnx_video_api \
+	libnx_scaler \
+	libion \
+	libutils \
+	libcutils \
+	libnx_gl_tools
+else  #ifeq ($(ANDROID_VERSION), 9)
 LOCAL_C_INCLUDES += \
 	$(OMX_TOP)/include \
 	$(OMX_TOP)/core/inc \
@@ -69,6 +97,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libion \
 	libutils \
 	libcutils
+endif	#ifeq ($(ANDROID_VERSION), 9)
+
 
 ifeq ($(ANDROID_VERSION), 9)
 LOCAL_HEADER_LIBRARIES := media_plugin_headers

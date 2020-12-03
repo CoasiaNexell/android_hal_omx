@@ -132,7 +132,12 @@ int CopySurfaceToBufferYV12( uint8_t *pSrc, uint8_t *pDst, uint32_t width, uint3
     OMX_S32 cStride = 0;
     OMX_S32 cVStride = 0;
 
+#ifdef GRALLOC_ALIGN_W_FACTOR_128
+    luStride = (ALIGN(width/2, 128) *2);
+#else
     luStride = ALIGN(width, 32);
+#endif
+
     luVStride = ALIGN(height, 16);
     cStride = luStride/2;
     cVStride = ALIGN(height/2, 16);

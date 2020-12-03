@@ -29,6 +29,9 @@ OMX_ERRORTYPE NX_VideoDecoder_ComponentInit (OMX_HANDLETYPE hComponent);
 
 #include <nx_video_api.h>
 #include <nx-scaler.h>
+#ifdef PIE
+#include <nx_gl_tools.h>
+#endif
 
 enum {
 	//  Decoders
@@ -247,6 +250,12 @@ struct tNX_VIDDEC_VIDEO_COMP_TYPE{
 
 	OMX_S32						hScaler;
 	OMX_BOOL					bOutBufCopy;
+
+#ifdef PIE
+	// for gl memcopy
+	void 						*pGlHandle;
+	OMX_S32						sharedFd[30][3];
+#endif
 };
 
 

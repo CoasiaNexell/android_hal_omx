@@ -1931,11 +1931,19 @@ void closeVideoCodec(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp)
 
 		if(pDecComp->bOutBufCopy)
 		{
+#ifdef PIE
+			if (pDecComp->pGlHandle)
+			{
+				NX_GlMemCopyDeInit(pDecComp->pGlHandle);
+				pDecComp->pGlHandle = NULL;
+			}
+#else
 			if(pDecComp->hScaler)
 			{
 				nx_scaler_close(pDecComp->hScaler);
 				pDecComp->hScaler = 0;
 			}
+#endif
 		}
 
 		if(pDecComp->bInitialized == OMX_TRUE)
@@ -2052,6 +2060,23 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 			}
 			else  //OMX_TRUE == pDecComp->bOutBufCopy
 			{
+#ifdef PIE
+				int32_t srcWidth, srcHeight, dstWidth, dstHeight, outBufNum;
+				srcWidth = (ALIGN(seqOut.width/2, 128) *2);
+				srcHeight  = seqOut.height;
+				dstWidth  = srcWidth;
+				dstHeight  = seqOut.height;
+
+				for( i=0 ; i<iNumCurRegBuf ; i++ )
+				{
+					pDecComp->sharedFd[i][0]  = pDecComp->hVidFrameBuf[i]->sharedFd[0];
+					pDecComp->sharedFd[i][1]  = pDecComp->hVidFrameBuf[i]->sharedFd[1];
+					pDecComp->sharedFd[i][2]  = pDecComp->hVidFrameBuf[i]->sharedFd[2];
+				}
+
+				outBufNum = iNumCurRegBuf;
+				pDecComp->pGlHandle = NX_GlMemCopyInit(srcWidth, srcHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum);
+#else
 				pDecComp->hScaler = scaler_open();
 				if(pDecComp->hScaler < 0)
 				{
@@ -2059,8 +2084,9 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 					ret = VID_ERR_INIT;
 					return ret;
 				}
+#endif
 				seqIn.imgFormat = V4L2_PIX_FMT_YVU420;
-				seqIn.numBuffers = iNumCurRegBuf - seqOut.minBuffers;
+				seqIn.numBuffers = seqOut.minBuffers + 3;
 			}
 		}
 		else
@@ -2450,6 +2476,25 @@ int GetUsableBufferIdx( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp )
 
 int32_t OutBufCopy( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut )
 {
+
+#ifdef PIE
+	int ret = 0;
+
+	NX_VID_MEMORY_INFO *pInImg = &pDecOut->hImg;
+	NX_VID_MEMORY_INFO *pOutImg = pDecComp->hVidFrameBuf[pDecComp->outUsableBufferIdx];
+
+	ret = NX_GlMemCopyRun(pDecComp->pGlHandle, pInImg->sharedFd, pOutImg->sharedFd);
+
+	if (  ret < 0 )
+	{
+		ErrMsg("NX_GlMemCopyRun() Fail, Handle = %p, return = %d \n", pDecComp->pGlHandle, ret );
+	}
+
+	NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
+
+	return ret;
+
+#else
 	int ret = 0;
 	struct nx_scaler_context scalerCtx;
 	struct rect	crop;
@@ -2500,6 +2545,7 @@ int32_t OutBufCopy( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut
 	NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
 
 	return ret;
+#endif
 }
 
 //
