@@ -29,9 +29,7 @@ OMX_ERRORTYPE NX_VideoDecoder_ComponentInit (OMX_HANDLETYPE hComponent);
 
 #include <nx_video_api.h>
 #include <nx-scaler.h>
-#ifdef PIE
 #include <nx_gl_tools.h>
-#endif
 
 enum {
 	//  Decoders
@@ -104,6 +102,7 @@ enum {
 #define	DEBUG_FLUSH		0
 #define	DEBUG_STATE		0
 #define	DEBUG_PARAM		0
+#define DEBUG_POSTPROC	1
 
 #if DEBUG_BUFFER
 #define	DbgBuffer(fmt,...)	DbgMsg(fmt, ##__VA_ARGS__)
@@ -141,6 +140,12 @@ enum {
 #define	DBG_PARAM(fmt,...)		DbgMsg(fmt, ##__VA_ARGS__)
 #else
 #define	DBG_PARAM(fmt,...)		do{}while(0)
+#endif
+
+#if DEBUG_POSTPROC
+#define	DBG_POSTPROC(fmt,...)	DbgMsg(fmt, ##__VA_ARGS__)
+#else
+#define	DBG_POSTPROC(fmt,...)	do{}while(0)
 #endif
 
 #define VID_ERR_NONE		0
@@ -251,11 +256,9 @@ struct tNX_VIDDEC_VIDEO_COMP_TYPE{
 	OMX_S32						hScaler;
 	OMX_BOOL					bOutBufCopy;
 
-#ifdef PIE
 	// for gl memcopy
 	void 						*pGlHandle;
 	OMX_S32						sharedFd[30][3];
-#endif
 };
 
 
@@ -265,8 +268,11 @@ int PopVideoTimeStamp(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, OMX_TICKS *timestamp,
 int flushVideoCodec(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp);
 int openVideoCodec(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp);
 void closeVideoCodec(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp);
-void DeInterlaceFrame( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut );
 int GetUsableBufferIdx( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp );
-int32_t OutBufCopy( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut );
+
+void GetSystemParameter( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp );
+void InitPostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, int srcWidth, int srcHeight, int dstWidth, int dstHeight, int outBufNum );
+void ClosePostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp );
+void DecodePostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut );
 
 #endif	//	__NX_OMXVideoDecoder_h__

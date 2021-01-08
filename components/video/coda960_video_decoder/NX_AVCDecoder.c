@@ -201,35 +201,34 @@ int NX_DecodeAvcFrame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, N
 			memcpy( pDecComp->codecSpecificData, inData, inSize );
 		}
 
-
-			if( ( inSize>4 && inData[0]==0 && inData[1]==0 && inData[2]==0 && inData[3]==1 && ((inData[4]&0x0F)==0x07) ) ||
-				( inSize>4 && inData[0]==0 && inData[1]==0 && inData[2]==1 && ((inData[3]&0x0F)==0x07) ) )
+		if( ( inSize>4 && inData[0]==0 && inData[1]==0 && inData[2]==0 && inData[3]==1 && ((inData[4]&0x0F)==0x07) ) ||
+			( inSize>4 && inData[0]==0 && inData[1]==0 && inData[2]==1 && ((inData[3]&0x0F)==0x07) ) )
+		{
+			int w,h;	//	width, height, left, top, right, bottom
+			if( avc_get_video_size( pDecComp->codecSpecificData, pDecComp->codecSpecificDataSize, &w, &h ) )
 			{
-				int w,h;	//	width, height, left, top, right, bottom
-				if( avc_get_video_size( pDecComp->codecSpecificData, pDecComp->codecSpecificDataSize, &w, &h ) )
+				if( pDecComp->width != w || pDecComp->height != h )
 				{
-					if( pDecComp->width != w || pDecComp->height != h )
+					//	Need Port Reconfiguration
+					SendEvent( (NX_BASE_COMPNENT*)pDecComp, OMX_EventPortSettingsChanged, OMX_DirOutput, 0, NULL );
+
+					// Change Port Format
+					pDecComp->pOutputPort->stdPortDef.format.video.nFrameWidth = w;
+					pDecComp->pOutputPort->stdPortDef.format.video.nFrameHeight = h;
+
+					//	Native Mode
+					if( pDecComp->bUseNativeBuffer )
 					{
-						//	Need Port Reconfiguration
-						SendEvent( (NX_BASE_COMPNENT*)pDecComp, OMX_EventPortSettingsChanged, OMX_DirOutput, 0, NULL );
-
-						// Change Port Format
-						pDecComp->pOutputPort->stdPortDef.format.video.nFrameWidth = w;
-						pDecComp->pOutputPort->stdPortDef.format.video.nFrameHeight = h;
-
-						//	Native Mode
-						if( pDecComp->bUseNativeBuffer )
-						{
-							pDecComp->pOutputPort->stdPortDef.nBufferSize = 4096;
-						}
-						else
-						{
-							pDecComp->pOutputPort->stdPortDef.nBufferSize = ((((w+15)>>4)<<4) * (((h+15)>>4)<<4))*3/2;
-						}
-						goto Exit;
+						pDecComp->pOutputPort->stdPortDef.nBufferSize = 4096;
 					}
+					else
+					{
+						pDecComp->pOutputPort->stdPortDef.nBufferSize = ((((w+15)>>4)<<4) * (((h+15)>>4)<<4))*3/2;
+					}
+					goto Exit;
 				}
 			}
+		}
 		goto Exit;
 	}
 
@@ -479,13 +478,7 @@ int NX_DecodeAvcFrame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, N
 			pOutBuf->nFlags = OMX_BUFFERFLAG_ENDOFFRAME;
 			TRACE("Native Mode : pOutBuf->nTimeStamp = %lld\n", pOutBuf->nTimeStamp/1000);
 
-			if( OMX_TRUE == pDecComp->bInterlaced )
-			{
-				DeInterlaceFrame( pDecComp, &decOut );
-			}else if( OMX_TRUE == pDecComp->bOutBufCopy )
-			{
-				OutBufCopy( pDecComp, &decOut );
-			}
+			DecodePostProcessing( pDecComp, &decOut );
 
 			pDecComp->outFrameCount++;
 			pDecComp->pCallbacks->FillBufferDone(pDecComp->hComp, pDecComp->hComp->pApplicationPrivate, pOutBuf);

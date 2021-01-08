@@ -1929,22 +1929,7 @@ void closeVideoCodec(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp)
 			pDecComp->hDeinterlace = NULL;
 		}
 
-		if(pDecComp->bOutBufCopy)
-		{
-#ifdef PIE
-			if (pDecComp->pGlHandle)
-			{
-				NX_GlMemCopyDeInit(pDecComp->pGlHandle);
-				pDecComp->pGlHandle = NULL;
-			}
-#else
-			if(pDecComp->hScaler)
-			{
-				nx_scaler_close(pDecComp->hScaler);
-				pDecComp->hScaler = 0;
-			}
-#endif
-		}
+		ClosePostProcessing( pDecComp );
 
 		if(pDecComp->bInitialized == OMX_TRUE)
 		{
@@ -2012,22 +1997,7 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 			DbgMsg("[%ld] Native Buffer Mode : iNumCurRegBuf=%d, ExtraSize = %ld, MAX_FRAME_BUFFER_NUM = %d\n",
 				pDecComp->instanceId, iNumCurRegBuf, pDecComp->codecSpecificDataSize, MAX_FRAME_BUFFER_NUM );
 
-#if OUT_BUF_COPY
-			pDecComp->bOutBufCopy = OMX_TRUE;
-			DbgMsg("%s : OutBufCopy Mode\n", __func__);
-#else
-			pDecComp->bOutBufCopy = OMX_FALSE;
-
-			char value[PROPERTY_VALUE_MAX];
-			if (property_get("videobufcopy.mode", value, "0") )
-			{
-				if ( !strcmp(value, "1") )
-				{
-					pDecComp->bOutBufCopy = OMX_TRUE;
-					DbgMsg("%s : OutBufCopy Mode\n", __func__);
-				}
-			}
-#endif
+			GetSystemParameter( pDecComp );
 			//	Translate Gralloc Memory Buffer Type To Nexell Video Memory Type
 			for( i=0 ; i<iNumCurRegBuf ; i++ )
 			{
@@ -2053,38 +2023,21 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 				seqIn.imgFormat	= pDecComp->vidFrameBuf[0].format;
 				seqIn.pMemHandle = &pDecComp->hVidFrameBuf[0];
 			}
-			else if ( OMX_TRUE == pDecComp->bInterlaced )
+			else
 			{
-				seqIn.imgFormat = V4L2_PIX_FMT_YVU420;
-				seqIn.numBuffers = iNumCurRegBuf - seqOut.minBuffers;
-			}
-			else  //OMX_TRUE == pDecComp->bOutBufCopy
-			{
-#ifdef PIE
-				int32_t srcWidth, srcHeight, dstWidth, dstHeight, outBufNum;
-				srcWidth = (ALIGN(seqOut.width/2, 128) *2);
-				srcHeight  = seqOut.height;
-				dstWidth  = srcWidth;
-				dstHeight  = seqOut.height;
-
+				int32_t stride;
+#ifdef GRALLOC_ALIGN_W_FACTOR_128
+    			stride = ALIGN(seqIn.width/2, 128) * 2;
+#else
+    			stride = ALIGN(seqIn.width, 32);
+#endif
 				for( i=0 ; i<iNumCurRegBuf ; i++ )
 				{
 					pDecComp->sharedFd[i][0]  = pDecComp->hVidFrameBuf[i]->sharedFd[0];
 					pDecComp->sharedFd[i][1]  = pDecComp->hVidFrameBuf[i]->sharedFd[1];
 					pDecComp->sharedFd[i][2]  = pDecComp->hVidFrameBuf[i]->sharedFd[2];
 				}
-
-				outBufNum = iNumCurRegBuf;
-				pDecComp->pGlHandle = NX_GlMemCopyInit(srcWidth, srcHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum);
-#else
-				pDecComp->hScaler = scaler_open();
-				if(pDecComp->hScaler < 0)
-				{
-					ALOGE("%s : Nscaler_open is failed!!,(hScaler=%ld)\n", __func__, pDecComp->hScaler);
-					ret = VID_ERR_INIT;
-					return ret;
-				}
-#endif
+				InitPostProcessing( pDecComp, stride, seqOut.height, stride, seqOut.height, iNumCurRegBuf );
 				seqIn.imgFormat = V4L2_PIX_FMT_YVU420;
 				seqIn.numBuffers = seqOut.minBuffers + 3;
 			}
@@ -2314,14 +2267,7 @@ int processEOS(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, OMX_BOOL bPortReconfigure)
 					}
 				}
 
-				if( OMX_TRUE == pDecComp->bInterlaced )
-				{
-					DeInterlaceFrame( pDecComp, &decOut );
-				}
-				else if( OMX_TRUE == pDecComp->bOutBufCopy )
-				{
-					OutBufCopy( pDecComp, &decOut );
-				}
+				DecodePostProcessing( pDecComp, &decOut );
 			}
 
 			if( 0 != PopVideoTimeStamp(pDecComp, &pOutBuf->nTimeStamp, &pOutBuf->nFlags )  )
@@ -2449,11 +2395,6 @@ int processEOSforFlush(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp)
 	return 0;
 }
 
-void DeInterlaceFrame( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut )
-{
-	UNUSED_PARAM(pDecOut);
-	if ( OMX_FALSE == pDecComp->bInterlaced )	return;
-}
 
 int GetUsableBufferIdx( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp )
 {
@@ -2474,78 +2415,117 @@ int GetUsableBufferIdx( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp )
 	return OutIdx;
 }
 
-int32_t OutBufCopy( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut )
+
+//////////////////////////////////////////////////////////////////////////////
+//																			//
+//					Post Processing Engine									//
+//																			//
+//	Post Processing Engine													//
+//		: Copy / Deinterlace / Scaling										//
+//																			//
+//////////////////////////////////////////////////////////////////////////////
+
+void GetSystemParameter( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp )
 {
+	char value[PROPERTY_VALUE_MAX];
 
-#ifdef PIE
-	int ret = 0;
-
-	NX_VID_MEMORY_INFO *pInImg = &pDecOut->hImg;
-	NX_VID_MEMORY_INFO *pOutImg = pDecComp->hVidFrameBuf[pDecComp->outUsableBufferIdx];
-
-	ret = NX_GlMemCopyRun(pDecComp->pGlHandle, pInImg->sharedFd, pOutImg->sharedFd);
-
-	if (  ret < 0 )
+	//	Out buffer copy
+	pDecComp->bOutBufCopy = OMX_FALSE;
+	if (property_get("videobufcopy.mode", value, "0") )
 	{
-		ErrMsg("NX_GlMemCopyRun() Fail, Handle = %p, return = %d \n", pDecComp->pGlHandle, ret );
+		if ( !strcmp(value, "1") )
+		{
+			pDecComp->bOutBufCopy = OMX_TRUE;
+			DbgMsg("%s : OutBufCopy Mode\n", __func__);
+		}
 	}
 
-	NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
-
-	return ret;
-
-#else
-	int ret = 0;
-	struct nx_scaler_context scalerCtx;
-	struct rect	crop;
-
-	memset(&scalerCtx,0,sizeof(struct nx_scaler_context));
-
-	NX_VID_MEMORY_INFO *pInImg = &pDecOut->hImg;
-	NX_VID_MEMORY_INFO *pOutImg = pDecComp->hVidFrameBuf[pDecComp->outUsableBufferIdx];
-
-	crop.x = 0;
-	crop.y = 0;
-	crop.width = pDecComp->dsp_width;
-	crop.height = pDecComp->dsp_height;
-
-	// scaler crop
-	scalerCtx.crop.x = crop.x;
-	scalerCtx.crop.y = crop.y;
-	scalerCtx.crop.width = crop.width;
-	scalerCtx.crop.height = crop.height;
-
-	// scaler src
-	scalerCtx.src_plane_num = 1;
-	scalerCtx.src_width = pInImg->width;
-	scalerCtx.src_height = pInImg->height;
-	scalerCtx.src_code = MEDIA_BUS_FMT_YUYV8_2X8;
-	scalerCtx.src_fds[0] = pInImg->sharedFd[0];
-	scalerCtx.src_stride[0] = pInImg->stride[0];
-	scalerCtx.src_stride[1] = pInImg->stride[1];
-	scalerCtx.src_stride[2] = pInImg->stride[2];
-
-	// scaler dst
-	scalerCtx.dst_plane_num = 1;
-	scalerCtx.dst_width = pOutImg->width;
-	scalerCtx.dst_height = pOutImg->height;
-	scalerCtx.dst_code = MEDIA_BUS_FMT_YUYV8_2X8;
-	scalerCtx.dst_fds[0] = pOutImg->sharedFd[0];
-	scalerCtx.dst_stride[0] = pOutImg->stride[0];
-	scalerCtx.dst_stride[1] = pOutImg->stride[1];
-	scalerCtx.dst_stride[2] = pOutImg->stride[2];
-
-	ret =  nx_scaler_run(pDecComp->hScaler, &scalerCtx);
-
-	if (  ret < 0 )
+	//	Output Deinterlace
+	pDecComp->bInterlaced = OMX_FALSE;
+	if (property_get("deinterlace.mode", value, "0") )
 	{
-		ErrMsg("nx_scaler_run() Fail, Handle = %lx, return = %d \n", pDecComp->hScaler, ret );
+		if ( !strcmp(value, "1") )
+		{
+			pDecComp->bInterlaced = OMX_TRUE;
+			DbgMsg("%s : Enable Deinterlace\n", __func__);
+		}
 	}
 
-	NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
+	if( pDecComp->bInterlaced && pDecComp->bOutBufCopy )
+	{
+		pDecComp->bOutBufCopy = OMX_FALSE;
+		DbgMsg("%s : Cannot coexist 'videobufcopy.mode' and 'deinterlace.mode' : disabled 'videobufcopy.mode'\n", __func__);
+	}
+}
 
-	return ret;
-#endif
+
+void InitPostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, int srcWidth, int srcHeight, int dstWidth, int dstHeight, int outBufNum )
+{
+	DBG_POSTPROC("[InitPostProcessing] bInterlaced(%d), bOutBufCopy(%d)\n", 
+				 pDecComp->bInterlaced, pDecComp->bOutBufCopy );
+	if ( OMX_TRUE == pDecComp->bInterlaced )
+	{
+		pDecComp->pGlHandle = NX_GlDeinterlaceInit(srcWidth, srcHeight, dstWidth, dstHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum);
+		DBG_POSTPROC("[InitPostProcessing] NX_GlDeinterlaceInit (handle = %p)\n", pDecComp->pGlHandle );
+	}
+	else if( OMX_TRUE == pDecComp->bOutBufCopy )
+	{
+		pDecComp->pGlHandle = NX_GlMemCopyInit(srcWidth, srcHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum);
+		DBG_POSTPROC("[InitPostProcessing] NX_GlMemCopyInit (handle = %p)\n", pDecComp->pGlHandle );
+	}
+}
+
+void ClosePostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp )
+{
+	DBG_POSTPROC("[ClosePostProcessing] bInterlaced(%d), bOutBufCopy(%d)\n", 
+				 pDecComp->bInterlaced, pDecComp->bOutBufCopy );
+	if ( OMX_TRUE == pDecComp->bInterlaced )
+	{
+		if (pDecComp->pGlHandle)
+		{
+			NX_GlDeinterlaceDeInit(pDecComp->pGlHandle);
+			pDecComp->pGlHandle = NULL;
+			DBG_POSTPROC("[ClosePostProcessing] NX_GlDeinterlaceDeInit Done\n" );
+		}
+	}
+	else if( OMX_TRUE == pDecComp->bOutBufCopy )
+	{
+		if (pDecComp->pGlHandle)
+		{
+			NX_GlMemCopyDeInit(pDecComp->pGlHandle);
+			DBG_POSTPROC("[ClosePostProcessing] NX_GlMemCopyDeInit Done\n" );
+			pDecComp->pGlHandle = NULL;
+		}
+	}
+	pDecComp->bInterlaced = OMX_FALSE;
+	pDecComp->bOutBufCopy = OMX_FALSE;
+}
+
+void DecodePostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *pDecOut )
+{
+	int ret = 0;
+	NX_VID_MEMORY_INFO *pInImg = &pDecOut->hImg;
+	NX_VID_MEMORY_INFO *pOutImg = pDecComp->hVidFrameBuf[pDecComp->outUsableBufferIdx];
+	DBG_POSTPROC("[DecodePostProcessing] bInterlaced(%d), bOutBufCopy(%d)\n", 
+				 pDecComp->bInterlaced, pDecComp->bOutBufCopy );
+	if ( OMX_TRUE == pDecComp->bInterlaced )
+	{
+		ret = NX_GlDeinterlaceRun(pDecComp->pGlHandle, pInImg->sharedFd, pOutImg->sharedFd);
+		if (  ret < 0 )
+		{
+			ErrMsg("NX_GlDeinterlaceRun() Fail, Handle = %p, return = %d \n", pDecComp->pGlHandle, ret );
+		}
+		NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
+	}
+	else if( OMX_TRUE == pDecComp->bOutBufCopy )
+	{
+		ret = NX_GlMemCopyRun(pDecComp->pGlHandle, pInImg->sharedFd, pOutImg->sharedFd);
+		if (  ret < 0 )
+		{
+			ErrMsg("NX_GlMemCopyRun() Fail, Handle = %p, return = %d \n", pDecComp->pGlHandle, ret );
+		}
+		NX_V4l2DecClrDspFlag( pDecComp->hVpuCodec, NULL, pDecOut->dispIdx );
+	}
 }
 
 //

@@ -280,10 +280,7 @@ int NX_DecodeRVFrame(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_QUEUE *pInQueue, NX
 			}
 			TRACE("nTimeStamp = %lld\n", pOutBuf->nTimeStamp/1000);
 
-			if( OMX_TRUE == pDecComp->bOutBufCopy )
-			{
-				OutBufCopy( pDecComp, &decOut );
-			}
+			DecodePostProcessing( pDecComp, &decOut );
 
 			pDecComp->outFrameCount++;
 			pDecComp->pCallbacks->FillBufferDone(pDecComp->hComp, pDecComp->hComp->pApplicationPrivate, pOutBuf);
