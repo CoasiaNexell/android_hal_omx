@@ -102,7 +102,7 @@ enum {
 #define	DEBUG_FLUSH		0
 #define	DEBUG_STATE		0
 #define	DEBUG_PARAM		0
-#define DEBUG_POSTPROC	1
+#define DEBUG_POSTPROC	0
 
 #if DEBUG_BUFFER
 #define	DbgBuffer(fmt,...)	DbgMsg(fmt, ##__VA_ARGS__)
