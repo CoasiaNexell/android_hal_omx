@@ -2021,6 +2021,8 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 			{
 				seqIn.numBuffers = iNumCurRegBuf;
 				seqIn.imgFormat	= pDecComp->vidFrameBuf[0].format;
+				//	if( seqIn.pMemHandle == NULL )  ==> Decoder allocate output memory internally
+				//	if( seqIn.pMemHandle != NULL )	==> Decoder use pMemHandle memory for output.
 				seqIn.pMemHandle = &pDecComp->hVidFrameBuf[0];
 			}
 			else
@@ -2040,6 +2042,7 @@ int InitializeCodaVpu(NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, unsigned char *buf, i
 				InitPostProcessing( pDecComp, stride, seqOut.height, stride, seqOut.height, iNumCurRegBuf );
 				seqIn.imgFormat = V4L2_PIX_FMT_YVU420;
 				seqIn.numBuffers = seqOut.minBuffers + 3;
+				seqIn.pMemHandle = NULL;
 			}
 		}
 		else
