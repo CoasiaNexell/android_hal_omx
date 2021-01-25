@@ -472,13 +472,17 @@ static OMX_ERRORTYPE NX_VidEncGetParameter (OMX_HANDLETYPE hComp, OMX_INDEXTYPE 
 			if( pVideoFormat->nPortIndex == 0 ){	//	Input Information
 				switch( nIndex )
 				{
-					case 0:
+					case 0:		//	OMX_COLOR_FormatYUV420SemiPlanar : YV12
 						memcpy( pVideoFormat, &pEncComp->inputFormat, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE) );
 						pVideoFormat->eColorFormat = OMX_COLOR_FormatYUV420Planar;
 						break;
 					case 1:
 						memcpy( pVideoFormat, &pEncComp->inputFormat, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE) );
 						pVideoFormat->eColorFormat = OMX_COLOR_FormatAndroidOpaque;
+						break;
+					case 2:		//	OMX_COLOR_FormatYUV420SemiPlanar : NV21
+						memcpy( pVideoFormat, &pEncComp->inputFormat, sizeof(OMX_VIDEO_PARAM_PORTFORMATTYPE) );
+						pVideoFormat->eColorFormat = OMX_COLOR_FormatYUV420SemiPlanar;
 						break;
 					default:
 						return OMX_ErrorNoMore;
@@ -1308,7 +1312,9 @@ static OMX_S32 EncoderInit(NX_VIDENC_COMP_TYPE *pEncComp, NX_VID_MEMORY_INFO *pI
 	memset(&encInitParam, 0, sizeof(encInitParam));
 
 	//	Check NV12 Format
-	if( pEncComp->bUseNativeBuffer == OMX_FALSE && pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatAndroidOpaque )
+	if( pEncComp->bUseNativeBuffer == OMX_FALSE && 
+		(pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatAndroidOpaque ||
+		 pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatYUV420SemiPlanar) )
 	{
 		DbgMsg("Encoder Input Format NV12\n");
 		// encInitParam.chromaInterleave = 1;
@@ -1434,7 +1440,8 @@ static OMX_S32 EncodeFrame(NX_VIDENC_COMP_TYPE *pEncComp, NX_QUEUE *pInQueue, NX
 		if( recodingBuffer[0]!=kMetadataBufferTypeCameraSource &&
 			recodingBuffer[0]!=kMetadataBufferTypeGrallocSource &&
 			pEncComp->inputFormat.eColorFormat != OMX_COLOR_FormatAndroidOpaque &&
-			pEncComp->inputFormat.eColorFormat != OMX_COLOR_FormatYUV420Planar )
+			pEncComp->inputFormat.eColorFormat != OMX_COLOR_FormatYUV420Planar &&
+			pEncComp->inputFormat.eColorFormat != OMX_COLOR_FormatYUV420SemiPlanar )
 		{
 			ErrMsg("Encoding Mode Fail : NativeBuffer(%d), MetaDataInBuffers(%d), InputFormat(0x%08x) !!!\n", pEncComp->bUseNativeBuffer, pEncComp->bMetaDataInBuffers, pEncComp->inputFormat.eColorFormat);
 			return -1;
@@ -1549,13 +1556,35 @@ static OMX_S32 EncodeFrame(NX_VIDENC_COMP_TYPE *pEncComp, NX_QUEUE *pInQueue, NX
 		NX_VID_MEMORY_INFO memInfo;
 		memset( &memInfo, 0, sizeof(NX_VID_MEMORY_INFO) );
 
-		//	CSC
+		//	Allocate for CSC destination memory for Video Codec
 		if( pEncComp->hCSCMem == NULL )
 		{
-			pEncComp->hCSCMem = NX_AllocateVideoMemory( pEncComp->encWidth, pEncComp->encHeight, NX_V4l2GetPlaneNum(V4L2_PIX_FMT_YUV420), V4L2_PIX_FMT_YUV420, 4096 );
-			NX_MapVideoMemory( pEncComp->hCSCMem );
+			if( pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatYUV420Planar )
+			{
+				DbgMsg("~~~~~~~~~~~~~~~~ Allcate YV12 Format Memory\n");
+				pEncComp->hCSCMem = NX_AllocateVideoMemory( pEncComp->encWidth, pEncComp->encHeight, NX_V4l2GetPlaneNum(V4L2_PIX_FMT_YUV420), V4L2_PIX_FMT_YUV420, 4096 );
+				NX_MapVideoMemory( pEncComp->hCSCMem );
+			}
+			else if( pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatAndroidOpaque ||
+					 pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatYUV420SemiPlanar )
+			{
+				DbgMsg("~~~~~~~~~~~~~~~~ Allcate NV21 Format Memory\n");
+				pEncComp->hCSCMem = NX_AllocateVideoMemory( pEncComp->encWidth, pEncComp->encHeight, NX_V4l2GetPlaneNum(V4L2_PIX_FMT_NV12M), V4L2_PIX_FMT_NV12M, 4096 );
+				NX_MapVideoMemory( pEncComp->hCSCMem );
+			}
+			else{
+				ErrMsg("~~~~~~~~~~~~~~ Unsupported color format (0x%08x)\n", pEncComp->inputFormat.eColorFormat);
+				return -1;
+			}
 		}
-		if( pEncComp->hCSCMem )
+
+		if( pEncComp->hCSCMem == NULL )
+		{
+			ErrMsg("Cannot allocate for encoding\n");
+			return -1;
+		}
+
+		if( pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatYUV420Planar )
 		{
 
 			OMX_U8 *plu = NULL;
@@ -1572,13 +1601,36 @@ static OMX_S32 EncodeFrame(NX_VIDENC_COMP_TYPE *pEncComp, NX_QUEUE *pInQueue, NX
 			cbStride = pEncComp->hCSCMem->stride[1];
 
 			char *srcY = (char*)pInBuf->pBuffer;
-			char *srcU = srcY + pEncComp->encWidth * pEncComp->encHeight;
-			char *srcV = srcU + pEncComp->encWidth * pEncComp->encHeight / 4;
+			char *srcV = srcY + pEncComp->encWidth * pEncComp->encHeight;
+			char *srcU = srcV + pEncComp->encWidth * pEncComp->encHeight / 4;
 
 			cscYV12ToYV12(  srcY, srcU, srcV,
 							(char*)plu, (char*)pcb, (char*)pcr,
 							pEncComp->encWidth, luStride, cbStride,
 							pEncComp->encWidth, pEncComp->encHeight );
+			memcpy(&inputMem, pEncComp->hCSCMem, sizeof(inputMem) );
+		}
+		else if ( pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatAndroidOpaque ||
+				  pEncComp->inputFormat.eColorFormat == OMX_COLOR_FormatYUV420SemiPlanar )
+		{
+			char *dstL = (char *)pEncComp->hCSCMem->pBuffer[0];
+			char *dstC = (char *)pEncComp->hCSCMem->pBuffer[1];
+			uint32_t luStride = pEncComp->hCSCMem->stride[0];
+			uint32_t cStride = pEncComp->hCSCMem->stride[1];
+			char *srcL = (char*)pInBuf->pBuffer;
+			char *srcC = srcL + pEncComp->encWidth * pEncComp->encHeight;
+
+			// cscNV21ToNV21(  srcL, srcC,
+			// 				dstL, dstC,
+			// 				pEncComp->encWidth, pEncComp->encWidth,
+			// 				luStride, cStride,
+			// 				pEncComp->encWidth, pEncComp->encHeight );
+			cscNV21ToNV12(  srcL, srcC,
+							dstL, dstC,
+							pEncComp->encWidth, pEncComp->encWidth,
+							luStride, cStride,
+							pEncComp->encWidth, pEncComp->encHeight );
+
 			memcpy(&inputMem, pEncComp->hCSCMem, sizeof(inputMem) );
 		}
 	}
