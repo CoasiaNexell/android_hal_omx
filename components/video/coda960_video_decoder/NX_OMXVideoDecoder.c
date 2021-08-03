@@ -2468,7 +2468,8 @@ void InitPostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, int srcWidth, int 
 				 pDecComp->bInterlaced, pDecComp->bOutBufCopy );
 	if ( OMX_TRUE == pDecComp->bInterlaced )
 	{
-		pDecComp->pGlHandle = NX_GlDeinterlaceInit(srcWidth, srcHeight, dstWidth, dstHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum);
+		pDecComp->pGlHandle = NX_GlDeinterlaceInit(srcWidth, srcHeight, dstWidth, dstHeight, (int32_t (*)[3])pDecComp->sharedFd, V4L2_PIX_FMT_YUV420, outBufNum, DEINT_MODE_MIXING, NULL, 0.);
+
 		DBG_POSTPROC("[InitPostProcessing] NX_GlDeinterlaceInit (handle = %p)\n", pDecComp->pGlHandle );
 	}
 	else if( OMX_TRUE == pDecComp->bOutBufCopy )
@@ -2513,7 +2514,7 @@ void DecodePostProcessing( NX_VIDDEC_VIDEO_COMP_TYPE *pDecComp, NX_V4L2DEC_OUT *
 				 pDecComp->bInterlaced, pDecComp->bOutBufCopy );
 	if ( OMX_TRUE == pDecComp->bInterlaced )
 	{
-		ret = NX_GlDeinterlaceRun(pDecComp->pGlHandle, pInImg->sharedFd, pOutImg->sharedFd);
+		ret = NX_GlDeinterlaceRun(pDecComp->pGlHandle, pInImg->sharedFd, NULL, pOutImg->sharedFd);
 		if (  ret < 0 )
 		{
 			ErrMsg("NX_GlDeinterlaceRun() Fail, Handle = %p, return = %d \n", pDecComp->pGlHandle, ret );
